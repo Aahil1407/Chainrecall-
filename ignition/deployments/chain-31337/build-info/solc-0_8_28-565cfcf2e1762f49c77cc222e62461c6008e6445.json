@@ -1,0 +1,49 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-565cfcf2e1762f49c77cc222e62461c6008e6445",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "compilerType": "solc",
+  "toolVersions": {
+    "hardhat": "3.14.0"
+  },
+  "userSourceNameMap": {
+    "contracts/ChainRecall.sol": "project/contracts/ChainRecall.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/ChainRecall.sol": {
+        "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.20;\r\n\r\ncontract ChainRecall {\r\n\r\n    address public owner;\r\n\r\n    struct Product {\r\n        string batchId;\r\n        string productName;\r\n        string manufacturer;\r\n        uint256 manufactureDate;\r\n        uint256 expiryDate;\r\n        bool recalled;\r\n    }\r\n\r\n    mapping(string => Product) public products;\r\n\r\n    constructor() {\r\n        owner = msg.sender;\r\n    }\r\n\r\n    modifier onlyOwner() {\r\n        require(msg.sender == owner, \"Only owner can perform this action\");\r\n        _;\r\n    }\r\n\r\n    function registerProduct(\r\n        string memory _batchId,\r\n        string memory _productName,\r\n        string memory _manufacturer,\r\n        uint256 _manufactureDate,\r\n        uint256 _expiryDate\r\n    ) public onlyOwner {\r\n\r\n        products[_batchId] = Product(\r\n            _batchId,\r\n            _productName,\r\n            _manufacturer,\r\n            _manufactureDate,\r\n            _expiryDate,\r\n            false\r\n        );\r\n    }\r\n\r\n    function updateRecallStatus(\r\n        string memory _batchId,\r\n        bool _recalled\r\n    ) public onlyOwner {\r\n\r\n        products[_batchId].recalled = _recalled;\r\n    }\r\n\r\n    function getProduct(\r\n        string memory _batchId\r\n    ) public view returns (Product memory) {\r\n\r\n        return products[_batchId];\r\n    }\r\n}"
+      }
+    }
+  }
+}
