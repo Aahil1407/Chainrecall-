@@ -16,7 +16,7 @@ async function main() {
   const { ethers } = await network.connect();
 
   const contractAddress =
-    "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318";
+    "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 
   const chainRecall = await ethers.getContractAt(
     "ChainRecall",
@@ -33,10 +33,16 @@ async function main() {
     20280821
   );
 
+  console.log("Transaction submitted...");
+  console.log("Transaction Hash:", tx.hash);
+
   await tx.wait();
 
+  console.log("\n=================================");
   console.log("Product registered successfully!");
   console.log("Batch ID:", batchId);
+  console.log("Transaction Hash:", tx.hash);
+  console.log("=================================\n");
 }
 
 main().catch((error) => {

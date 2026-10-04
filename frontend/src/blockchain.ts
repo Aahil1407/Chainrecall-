@@ -1,10 +1,10 @@
 import { ethers } from "ethers";
 
 const CONTRACT_ADDRESS =
-  "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853";
+  "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 
 const CONTRACT_ABI = [
-  "function getProduct(string memory batchId) public view returns (string memory, string memory, string memory, uint256, uint256, bool)",
+  "function getProduct(string batchId) view returns (tuple(string batchId,string productName,string manufacturer,uint256 manufactureDate,uint256 expiryDate,bool recalled))",
 ];
 
 export async function getProduct(batchId: string) {
@@ -18,5 +18,14 @@ export async function getProduct(batchId: string) {
     provider
   );
 
-  return await contract.getProduct(batchId);
+  const product = await contract.getProduct(batchId);
+
+  return {
+    batchId: product.batchId,
+    productName: product.productName,
+    manufacturer: product.manufacturer,
+    manufactureDate: product.manufactureDate.toString(),
+    expiryDate: product.expiryDate.toString(),
+    recalled: product.recalled,
+  };
 }

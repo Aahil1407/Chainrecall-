@@ -11,7 +11,7 @@ async function main() {
   const { ethers } = await network.connect();
 
   const contractAddress =
-    "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318";
+  "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 
   const chainRecall = await ethers.getContractAt(
     "ChainRecall",

@@ -8,15 +8,23 @@ async function main() {
     process.exit(1);
   }
 
+  const verificationUrl =
+    `http://localhost:5173/verify?batchId=${encodeURIComponent(batchId)}`;
+
   const fileName = `qr-${batchId}.png`;
 
-  await QRCode.toFile(fileName, batchId, {
-    width: 500,
-    margin: 2,
-  });
+  await QRCode.toFile(
+    fileName,
+    verificationUrl,
+    {
+      width: 500,
+      margin: 2,
+    }
+  );
 
   console.log("QR code generated successfully!");
   console.log("Batch ID:", batchId);
+  console.log("Verification URL:", verificationUrl);
   console.log("QR file:", fileName);
 }
 

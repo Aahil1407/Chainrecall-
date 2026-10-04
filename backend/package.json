@@ -1,0 +1,19 @@
+{
+  "name": "chainrecall-backend",
+  "version": "1.0.0",
+  "description": "ChainRecall backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "seed:manufacturers": "node seedManufacturers.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "ethers": "^6.17.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.15.3"
+  }
+}
