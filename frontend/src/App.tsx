@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
+import { API_URL } from "./api";
 import "./App.css";
 
 type Product = {
@@ -21,9 +22,6 @@ function App() {
   const scannerRef =
     useRef<Html5Qrcode | null>(null);
 
-  const BACKEND_URL =
-    "http://localhost:5000";
-
   // =========================================
   // VERIFY PRODUCT
   // =========================================
@@ -42,7 +40,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `${BACKEND_URL}/api/products/${encodeURIComponent(
+        `${API_URL}/api/products/${encodeURIComponent(
           value
         )}/verify`
       );

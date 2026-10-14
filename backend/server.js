@@ -8,13 +8,15 @@ require("dotenv").config();
 
 const app = express();
 
-const FRONTEND_ORIGIN = "http://localhost:5173";
+const FRONTEND_ORIGIN = (process.env.FRONTEND_ORIGIN || "http://localhost:5173").replace(/\/$/, "");
 const AUTH_COOKIE_NAME = "chainrecall_auth";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
 const AUTH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
+  // Vercel and Render use different site domains. Production therefore needs
+  // a Secure SameSite=None cookie; local development remains same-site.
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
   path: "/",
 };
 
@@ -25,7 +27,7 @@ app.use(express.json());
 // CONFIGURATION
 // =========================================
 
-const PORT = 5000;
+const PORT = Number(process.env.PORT || 5000);
 
 const CONTRACT_ADDRESS =
   process.env.CONTRACT_ADDRESS;
@@ -116,6 +118,10 @@ app.get("/", (req, res) => {
   res.json({
     message: "ChainRecall backend is running",
   });
+});
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
 // =========================================
@@ -443,19 +449,49 @@ app.get(
       scopeParams
     );
 
-    // Recall status on the chain is authoritative; MySQL remains its reporting mirror.
+    // MySQL rows remain visible when a local chain reset orphaned their records.
+    // Only an actual on-chain record can supply authoritative recall status.
     const products = await Promise.all(rows.map(async (row) => {
-      const onChainProduct = await chainRecall.getProduct(row.batch_id);
-      const recalled = Boolean(onChainProduct.batchId) && onChainProduct.recalled;
+      try {
+        const onChainProduct = await chainRecall.getProduct(row.batch_id);
+        if (!onChainProduct.batchId) {
+          console.warn(`Blockchain product missing for batch ${row.batch_id} on configured chain`);
+          return {
+            ...row,
+            recalled: null,
+            blockchainVerification: {
+              status: "UNAVAILABLE",
+              reason: "PRODUCT_NOT_FOUND_ON_CHAIN",
+              message: "This database record is not present at the configured contract.",
+            },
+          };
+        }
 
-      if (Boolean(row.recalled) !== recalled) {
-        await pool.execute(
-          "UPDATE products SET recalled = ? WHERE batch_id = ?",
-          [recalled, row.batch_id]
-        );
+        const recalled = onChainProduct.recalled;
+        if (Boolean(row.recalled) !== recalled) {
+          await pool.execute(
+            "UPDATE products SET recalled = ? WHERE batch_id = ?",
+            [recalled, row.batch_id]
+          );
+        }
+
+        return {
+          ...row,
+          recalled,
+          blockchainVerification: { status: "VERIFIED" },
+        };
+      } catch (error) {
+        console.error(`Blockchain lookup failed for batch ${row.batch_id}:`, error.code || error.shortMessage || "RPC_ERROR");
+        return {
+          ...row,
+          recalled: null,
+          blockchainVerification: {
+            status: "UNAVAILABLE",
+            reason: "BLOCKCHAIN_LOOKUP_FAILED",
+            message: "The blockchain record could not be verified.",
+          },
+        };
       }
-
-      return { ...row, recalled };
     }));
 
     const analyticsJoin = isManufacturer
@@ -484,12 +520,12 @@ app.get(
   } catch (error) {
     console.error(
       "Failed to fetch products:",
-      error
+      error.code || error.shortMessage || "UNEXPECTED_ERROR"
     );
 
     res.status(500).json({
       message: "Failed to fetch products",
-      error: error.message,
+      error: "PRODUCT_LIST_LOOKUP_FAILED",
     });
   }
   }
@@ -1001,9 +1037,8 @@ app.post(
       if (!product.batchId) {
 
         return res.status(404).json({
-
-          message:
-            "Product not found on blockchain",
+          code: "PRODUCT_NOT_ON_CHAIN",
+          message: "This batch is not registered on the current blockchain. Reconcile the batch before initiating a recall.",
         });
       }
 
@@ -1066,7 +1101,22 @@ app.post(
         tx.hash
       );
 
-      await tx.wait();
+      const receipt = await tx.wait();
+
+      if (!receipt || receipt.status !== 1) {
+        return res.status(502).json({
+          code: "RECALL_TRANSACTION_NOT_CONFIRMED",
+          message: "The blockchain did not confirm the recall transaction. The database was not updated.",
+        });
+      }
+
+      const confirmedProduct = await chainRecall.getProduct(batchId);
+      if (!confirmedProduct.batchId || !confirmedProduct.recalled) {
+        return res.status(502).json({
+          code: "RECALL_STATE_NOT_CONFIRMED",
+          message: "The transaction was confirmed, but the recalled state could not be verified. The database was not updated.",
+        });
+      }
 
       console.log(
         "Recall transaction confirmed."
@@ -1117,18 +1167,18 @@ app.post(
 
     } catch (error) {
 
-      console.error(
-        "Recall failed:",
-        error
-      );
+      console.error("Recall failed:", error.code || error.shortMessage || "UNEXPECTED_ERROR");
 
-      res.status(500).json({
-
-        message:
-          "Product recall failed",
-
-        error:
-          error.message,
+      const blockchainFailure = error.code === "CALL_EXCEPTION"
+        || error.code === "NETWORK_ERROR"
+        || error.code === "BAD_DATA"
+        || error.code === "INSUFFICIENT_FUNDS"
+        || error.code === "UNKNOWN_ERROR";
+      res.status(blockchainFailure ? 502 : 500).json({
+        code: blockchainFailure ? "RECALL_TRANSACTION_FAILED" : "RECALL_REQUEST_FAILED",
+        message: blockchainFailure
+          ? "The blockchain recall failed or could not be confirmed. The database was not updated."
+          : "Product recall failed. The database was not updated unless the blockchain confirmation completed.",
       });
     }
   }
@@ -1207,6 +1257,13 @@ async function startServer() {
       "Contract address:",
       CONTRACT_ADDRESS
     );
+
+    const contractCode = await provider.getCode(CONTRACT_ADDRESS);
+    if (contractCode === "0x") {
+      console.error("Configured contract address has no bytecode on the configured RPC endpoint.");
+    } else {
+      console.log("Configured contract bytecode is present.");
+    }
 
     // =====================================
     // START EXPRESS

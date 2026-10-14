@@ -242,7 +242,7 @@
 
 .manufacturer-stats {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 16px;
   margin-bottom: 34px;
 }
@@ -513,6 +513,13 @@
   color: #ff8585;
   font-size: 10px;
   font-weight: 700;
+}
+
+.manufacturer-recall-unavailable {
+  max-width: 240px;
+  color: #c5a46a;
+  font-size: 10px;
+  line-height: 1.45;
 }
 
 .manufacturer-state {

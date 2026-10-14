@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import QRCode from "qrcode";
-import { registerProduct, type RegisterProductRequest, type RegisterProductResponse } from "./api";
+import { API_URL, registerProduct, type RegisterProductRequest, type RegisterProductResponse } from "./api";
 import "./Manufacturer.css";
-
-const API_URL = "http://localhost:5000";
 
 type Product = {
   product_id: number;
@@ -12,7 +10,8 @@ type Product = {
   manufacturer: string;
   manufacture_date: string;
   expiry_date: string;
-  recalled: boolean | number | string;
+  recalled: boolean | number | string | null;
+  blockchainVerification?: { status: "VERIFIED" | "UNAVAILABLE"; reason?: string; message?: string };
   contract_address: string;
   registration_tx_hash: string;
   recall_tx_hash: string | null;
@@ -106,7 +105,7 @@ function Manufacturer() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "VALID" | "RECALLED">("ALL");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "VALID" | "RECALLED" | "UNVERIFIED">("ALL");
   const [analytics, setAnalytics] = useState({
     totalVerifications: 0,
     recalledProductVerifications: 0,
@@ -204,7 +203,11 @@ function Manufacturer() {
   }
 
   async function recallProduct(product: Product) {
-    if (isRecalled(product.recalled)) return;
+    if (product.blockchainVerification?.status === "UNAVAILABLE") {
+      setError("This batch is not registered on the current blockchain. Reconcile the batch before initiating a recall.");
+      return;
+    }
+    if (product.blockchainVerification?.status === "VERIFIED" && isRecalled(product.recalled)) return;
     const confirmed = window.confirm(
       `Recall ${product.product_name} (batch ${product.batch_id})? This action updates the product recall status.`,
     );
@@ -275,7 +278,7 @@ function Manufacturer() {
     setQrError("");
     setQrDataUrl("");
     try {
-      const verificationUrl = `http://localhost:5173/verify?batchId=${encodeURIComponent(registration.batchId)}`;
+      const verificationUrl = `${window.location.origin}/verify?batchId=${encodeURIComponent(registration.batchId)}`;
       const dataUrl = await QRCode.toDataURL(verificationUrl, {
         errorCorrectionLevel: "M",
         margin: 2,
@@ -320,12 +323,15 @@ function Manufacturer() {
     }
   }
 
-  const validCount = products.filter((product) => !isRecalled(product.recalled)).length;
-  const recalledCount = products.length - validCount;
+  const verifiedProducts = products.filter((product) => product.blockchainVerification?.status !== "UNAVAILABLE");
+  const validCount = verifiedProducts.filter((product) => !isRecalled(product.recalled)).length;
+  const recalledCount = verifiedProducts.filter((product) => isRecalled(product.recalled)).length;
+  const unverifiedCount = products.length - verifiedProducts.length;
   const filteredProducts = products.filter((product) => {
     const recalled = isRecalled(product.recalled);
+    const unverified = product.blockchainVerification?.status === "UNAVAILABLE";
     const matchesStatus = statusFilter === "ALL"
-      || (statusFilter === "RECALLED" ? recalled : !recalled);
+      || (statusFilter === "UNVERIFIED" ? unverified : !unverified && (statusFilter === "RECALLED" ? recalled : !recalled));
     const term = search.trim().toLocaleLowerCase();
     const matchesSearch = !term || [product.batch_id, product.product_name, product.manufacturer]
       .some((field) => field.toLocaleLowerCase().includes(term));
@@ -433,6 +439,11 @@ function Manufacturer() {
                 <span className="manufacturer-stat-note">Recall status confirmed</span>
               </article>
               <article className="manufacturer-stat">
+                <span className="manufacturer-stat-label">Unverified Products</span>
+                <strong>{loading ? "—" : unverifiedCount}</strong>
+                <span className="manufacturer-stat-note">Requires chain reconciliation</span>
+              </article>
+              <article className="manufacturer-stat">
                 <span className="manufacturer-stat-label">Total Verifications</span>
                 <strong>{loading ? "—" : analytics.totalVerifications}</strong>
                 <span className="manufacturer-stat-note">Recorded verification events</span>
@@ -465,7 +476,7 @@ function Manufacturer() {
                   />
                 </label>
                 <div className="manufacturer-filter-group" role="group" aria-label="Filter by product status">
-                {(["ALL", "VALID", "RECALLED"] as const).map((filter) => (
+                {(["ALL", "VALID", "RECALLED", "UNVERIFIED"] as const).map((filter) => (
                     <button
                       key={filter}
                       className={statusFilter === filter ? "manufacturer-filter-active" : ""}
@@ -473,7 +484,7 @@ function Manufacturer() {
                       aria-pressed={statusFilter === filter}
                       onClick={() => setStatusFilter(filter)}
                     >
-                      {filter === "ALL" ? "All" : filter === "VALID" ? "Valid" : "Recalled"}
+                      {filter === "ALL" ? "All" : filter === "VALID" ? "Valid" : filter === "RECALLED" ? "Recalled" : "Unverified"}
                     </button>
                   ))}
                 </div>
@@ -510,6 +521,9 @@ function Manufacturer() {
                     <tbody>
                       {filteredProducts.map((product) => {
                         const recalled = isRecalled(product.recalled);
+                        const statusLabel = product.blockchainVerification?.status === "UNAVAILABLE"
+                          ? "UNVERIFIED"
+                          : recalled ? "RECALLED" : "VALID";
                         const isRecalling = recallingBatch === product.batch_id;
                         return (
                           <tr key={product.product_id ?? product.batch_id}>
@@ -521,8 +535,8 @@ function Manufacturer() {
                             <td className="manufacturer-verification-count">{Number(product.verification_count || 0)}</td>
                             <td>{formatDateTime(product.last_verified_at)}</td>
                             <td>
-                              <span className={`manufacturer-status ${recalled ? "is-recalled" : "is-valid"}`}>
-                                <span aria-hidden="true" /> {recalled ? "RECALLED" : "VALID"}
+                              <span className={`manufacturer-status ${product.blockchainVerification?.status === "UNAVAILABLE" ? "" : recalled ? "is-recalled" : "is-valid"}`}>
+                                <span aria-hidden="true" /> {statusLabel}
                               </span>
                             </td>
                             <td>
@@ -534,7 +548,23 @@ function Manufacturer() {
                                 >
                                   View Details
                                 </button>
-                                {recalled ? (
+                                {product.blockchainVerification?.status === "UNAVAILABLE" ? (
+                                  <>
+                                    {user?.role === "MANUFACTURER" && (
+                                      <button
+                                        className="manufacturer-recall-button"
+                                        type="button"
+                                        disabled
+                                        title="This batch is not registered on the current blockchain. Reconcile the batch before initiating a recall."
+                                      >
+                                        Recall Product
+                                      </button>
+                                    )}
+                                    <span className="manufacturer-recall-unavailable">
+                                      This batch is not registered on the current blockchain. Reconcile the batch before initiating a recall.
+                                    </span>
+                                  </>
+                                ) : recalled ? (
                                   <span className="manufacturer-recalled-action">RECALLED</span>
                                 ) : user?.role === "MANUFACTURER" ? (
                                   <button
@@ -736,9 +766,12 @@ function Manufacturer() {
                 <div>
                   <dt>Current status</dt>
                   <dd>
-                    <span className={`manufacturer-status ${isRecalled(selectedProduct.recalled) ? "is-recalled" : "is-valid"}`}>
-                      <span aria-hidden="true" /> {isRecalled(selectedProduct.recalled) ? "RECALLED" : "VALID"}
+                    <span className={`manufacturer-status ${selectedProduct.blockchainVerification?.status === "UNAVAILABLE" ? "" : isRecalled(selectedProduct.recalled) ? "is-recalled" : "is-valid"}`}>
+                      <span aria-hidden="true" /> {selectedProduct.blockchainVerification?.status === "UNAVAILABLE" ? "UNVERIFIED" : isRecalled(selectedProduct.recalled) ? "RECALLED" : "VALID"}
                     </span>
+                    {selectedProduct.blockchainVerification?.status === "UNAVAILABLE" && (
+                      <p>{selectedProduct.blockchainVerification.message}</p>
+                    )}
                   </dd>
                 </div>
               </dl>

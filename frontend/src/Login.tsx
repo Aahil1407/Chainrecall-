@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from "react";
+import { API_URL } from "./api";
 import "./Login.css";
-
-const API_URL = "http://localhost:5000";
 
 function Login() {
   const [email, setEmail] = useState("");
